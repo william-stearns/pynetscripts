@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Takes IP addresses on stdin.  If they're in one or more of the command-line-or-file-supplied subnets, spit them to stdout."""
+"""Takes lines containing IP addresses on stdin.  If they're in one or more of the command-line-or-file-supplied subnets, spit the entire line to stdout."""
 
 #Copyright 2016-2018 William Stearns <william.l.stearns@gmail.com>
 #Released under the GPL
