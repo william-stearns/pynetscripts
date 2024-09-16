@@ -3,7 +3,7 @@
 
 #Processes around 386 pps
 
-__version__ = '0.9.1'
+__version__ = '0.9.2'
 
 __author__ = 'William Stearns'
 __copyright__ = 'Copyright 2018-2024, William Stearns'
@@ -148,6 +148,10 @@ def should_write(p):
 	if port_tuple and port_tuple not in tuple_stats:
 		tuple_stats[port_tuple] = [0, None, 0]
 
+	if args['maxseconds'] is not None:
+		if (p.time - base_timestamp) > args['maxseconds']:
+			write_it = False
+
 	if write_it:
 		tuple_stats[port_tuple][0] += 1
 
@@ -219,6 +223,25 @@ def decapsulate_a_packet(orig_pkt):
 	return new_pkt
 
 
+def stopfilter(one_pkt) -> bool:
+	"""Decide whether we should continue sniffing or not.  A return
+	of True means STOP sniffing; a return of false means CONTINUE
+	sniffing.  At the moment we only return True if we exceed the
+	number of seconds defined in CLP ---maxseconds ."""
+
+	global base_timestamp
+
+	shouldstop = False
+	if args['maxseconds'] is not None:
+		if not base_timestamp:
+			base_timestamp = one_pkt.time
+
+		if (one_pkt.time - base_timestamp) > args['maxseconds']:
+			shouldstop = True
+
+	return shouldstop
+
+
 def process_a_packet(pkt):
 	"""Handle a single packet read from the input pcap file."""
 
@@ -233,11 +256,14 @@ def process_a_packet(pkt):
 	#time.sleep(5)
 
 
-	if args['timescale'] or args['delta']:
+	if args['timescale'] or args['delta'] or (args['maxseconds'] is not None):
 		if not base_timestamp:
 			base_timestamp = pkt.time
 		delta_time = pkt.time - base_timestamp
-		pkt.time = base_timestamp + (args['timescale'] * delta_time) + args['delta']
+
+		if args['timescale'] or args['delta']:
+			pkt.time = base_timestamp + (args['timescale'] * delta_time) + args['delta']
+
 	if should_write(pkt):
 		if args['decap'] and (pkt.haslayer(VXLAN) or pkt.haslayer(ERSPAN) or pkt.haslayer(GRE) or pkt.haslayer(Dot1Q) or (pkt.haslayer(IP) and (pkt[IP].proto in (4, 41)))):
 			pmod = decapsulate_a_packet(pkt)
@@ -262,6 +288,7 @@ if __name__ == "__main__":
 	parser.add_argument('--udpcount', help='Maximum number of UDP packets to write on one side of a UDP conversation', required=False, type=int, default=None)
 	parser.add_argument('--udpbytes', help='udpbytes - not yet implemented', required=False, type=int, default=None)
 	parser.add_argument('--decap', help='Decapsulate packets (strips vxlan, 802.1Q, ERSPAN, GRE, IPIP, and IPIPv6)', action='store_true', required=False, default=False)
+	parser.add_argument('--maxseconds', help='Maximum number of seconds of packets to write', required=False, type=float, default=None)
 	args = vars(parser.parse_args())
 	#FIXME - add --summary argument and show in and out stats
 
@@ -275,7 +302,7 @@ if __name__ == "__main__":
 			#quit(1)
 
 	try:
-		sniff(store=0, offline=args['read'], filter=bpfilter, prn=lambda x: process_a_packet(x))	# pylint: disable=unnecessary-lambda
+		sniff(store=0, offline=args['read'], filter=bpfilter, stop_filter=stopfilter, prn=lambda x: process_a_packet(x))	# pylint: disable=unnecessary-lambda
 	except IOError:
 		print("Unable to open " + str(args['read']) + ' , exiting.')
 		raise
